@@ -1,0 +1,14 @@
+########## NOTE #########
+First install the usb module.
+Get to the directory 'fliusb' and follow the instructions in the 
+'INSTALL.txt' file.
+########################
+
+For installing the fli library, type:
+make clean
+make
+make install
+
+
+This will create the 'libfli.a' file and install it for the use of the
+TAT source code.

@@ -1,0 +1,30 @@
+fliusb driver installation
+--------------------------
+
+Note that this needs to be done each time a new kernel is installed, which
+may be often in a distribution like Fedora. From inside the pyfli git
+repository the steps are
+
+make clean
+make
+sudo cp fliusb.ko /lib/modules/$(uname -r)/extra
+sudo depmod
+
+Once this is done the driver will be automatically loaded when a FLI usb
+device is plugged in. The module directory location used above works for my
+distribution, Fedora 17, it may need to be modified for other
+distributions. Note, Ubuntu uses 'misc' instead of 'extra'.
+
+udev configuration
+------------------
+
+The default permissions of the /dev/fliusb[0-9]* device node created when a
+FLI device is plugged in only allow root access. This may be changed and
+the device name customized by adding a rules script to /etc/udev/rules.d.
+An example script 10-local.rules.example can serve as a template for this,
+strip the '.example' extension, modify as needed, and do the copy. The
+results can be checked by plugging in a FLI device and looking at the
+permissions of the created /dev node. After installing the file it may be
+necessary to reload the rules.
+
+sudo udevadm control --reload-rules
