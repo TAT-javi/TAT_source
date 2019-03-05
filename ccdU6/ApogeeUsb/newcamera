@@ -1,0 +1,1399 @@
+//////////////////////////////////////////////////////////////////////
+//
+// ApogeeUsb.cpp : Library of basic USB functions for Apogee Alta.
+//
+// Copyright (c) 2003, 2004 Apogee Instruments, Inc.
+//
+//////////////////////////////////////////////////////////////////////
+
+#include <windows.h>
+#include <setupapi.h>
+#include <tchar.h>
+
+#include <stdio.h>
+
+#include <initguid.h>
+#include "..\Driver\GUID_USB.h"
+
+#include "ApogeeUsb.h"
+#include "ApogeeUsbErr.h"
+
+#include "..\Driver\ApogeeIoctl.h"
+// #include "..\Driver\ApnUsbSys.h"
+
+
+// #include <stdio.h>
+
+
+
+// 1044480
+// 520192
+// 258048
+// 126976
+// 61440
+// 49152
+// 4096
+#define IMAGE_BUFFER_SIZE		126976		// Number of requested bytes in a transfer
+
+typedef HDEVINFO ( WINAPI *RTSetupDiGetClassDevs )( LPGUID, 
+													PCTSTR, 
+													HWND, 
+													DWORD );
+
+typedef BOOL ( WINAPI *RTSetupDiEnumDeviceInterfaces )( HDEVINFO,
+														PSP_DEVINFO_DATA,
+														LPGUID,
+														DWORD,
+														PSP_DEVICE_INTERFACE_DATA );
+
+typedef BOOL ( WINAPI *RTSetupDiGetDeviceInterfaceDetail )( HDEVINFO,
+															PSP_DEVICE_INTERFACE_DATA,
+															PSP_DEVICE_INTERFACE_DETAIL_DATA,
+															DWORD,
+															PDWORD,
+															PSP_DEVINFO_DATA );
+
+
+// This is an example of an exported function.
+
+APN_USB_TYPE ApnUsbOpen( unsigned short DevNumber, HANDLE *hDevice, TCHAR *SysDeviceName )
+{
+	HDEVINFO							hDeviceInfo;
+	SP_INTERFACE_DEVICE_DATA			InterfaceData;
+	PSP_INTERFACE_DEVICE_DETAIL_DATA	pInterfaceDetailData;
+	ULONG								RequiredSize;
+	ULONG								PredictedSize;
+	
+	HINSTANCE							hinstLib; 
+    RTSetupDiGetClassDevs				RTSetupDiGetClassDevsAddress; 
+	RTSetupDiEnumDeviceInterfaces		RTSetupDiEnumDeviceInterfacesAddress;
+	RTSetupDiGetDeviceInterfaceDetail	RTSetupDiGetDeviceInterfaceDetailAddress;
+
+
+	*hDevice = NULL;
+
+    hinstLib = LoadLibrary( "setupapi" ); 
+ 
+    // If the handle is valid, try to get the function address.
+ 
+    if (hinstLib == NULL) 
+	{
+		return APN_USB_ERR_OPEN;		// Failure to open device
+	}
+	else
+	{ 
+		RTSetupDiGetClassDevsAddress = 
+			(RTSetupDiGetClassDevs)GetProcAddress(hinstLib, "SetupDiGetClassDevsA");
+
+		RTSetupDiEnumDeviceInterfacesAddress = 
+			(RTSetupDiEnumDeviceInterfaces)GetProcAddress(hinstLib, "SetupDiEnumDeviceInterfaces");
+																			  
+        RTSetupDiGetDeviceInterfaceDetailAddress = 
+			(RTSetupDiGetDeviceInterfaceDetail)GetProcAddress(hinstLib, "SetupDiGetDeviceInterfaceDetailA");
+
+		if ( (RTSetupDiGetClassDevsAddress == NULL) ||
+			 (RTSetupDiEnumDeviceInterfacesAddress == NULL) ||
+			 (RTSetupDiGetDeviceInterfaceDetailAddress == NULL) )
+		{
+			FreeLibrary( hinstLib );
+			return APN_USB_ERR_OPEN;
+		}		
+	}
+
+	hDeviceInfo = ((RTSetupDiGetClassDevsAddress)( (LPGUID) &GUID_USBWDM_DEVICE_INTERFACE_CLASS,
+												  NULL,
+												  NULL,
+												  DIGCF_PRESENT | DIGCF_INTERFACEDEVICE ));
+
+	if ( hDeviceInfo == INVALID_HANDLE_VALUE )
+	{
+		FreeLibrary( hinstLib );
+		return APN_USB_ERR_OPEN;
+	}
+
+	// We must set the size before making the call to SetupDiEnumDeviceInterfaces
+	InterfaceData.cbSize = sizeof( SP_DEVICE_INTERFACE_DATA );
+
+	if ((RTSetupDiEnumDeviceInterfacesAddress)( hDeviceInfo,
+												0,
+												(LPGUID) &GUID_USBWDM_DEVICE_INTERFACE_CLASS,
+												DevNumber, 
+												&InterfaceData ) == false)
+	{
+		FreeLibrary( hinstLib );
+		return APN_USB_ERR_OPEN;
+	}
+
+	// This first call to SetupDiGetDeviceInterfaceDetail will fail, but
+	// the RequiredSize is set to the correct value for the second call.
+	// See the DDK documentation for more info.
+	(RTSetupDiGetDeviceInterfaceDetailAddress)( hDeviceInfo,
+												&InterfaceData,
+												NULL,
+												0,
+												&RequiredSize,
+												NULL );
+
+	PredictedSize		 = RequiredSize;
+	pInterfaceDetailData = ( PSP_INTERFACE_DEVICE_DETAIL_DATA ) malloc ( PredictedSize );
+	pInterfaceDetailData->cbSize	= sizeof( SP_INTERFACE_DEVICE_DETAIL_DATA );
+
+	if ((RTSetupDiGetDeviceInterfaceDetailAddress)( hDeviceInfo,
+													&InterfaceData,
+													pInterfaceDetailData,
+													PredictedSize,
+													&RequiredSize,
+													NULL ) == false )
+	{
+		FreeLibrary( hinstLib );
+		free( pInterfaceDetailData );
+		return APN_USB_ERR_OPEN;
+	}
+
+	// Open the driver
+	*hDevice = CreateFile( pInterfaceDetailData->DevicePath,
+						   GENERIC_WRITE | GENERIC_READ,
+						   FILE_SHARE_WRITE | FILE_SHARE_READ,
+						   NULL,
+						   OPEN_EXISTING,
+						   0,
+						   NULL );
+
+	if ( *hDevice == INVALID_HANDLE_VALUE )
+	{
+		FreeLibrary( hinstLib );
+		free( pInterfaceDetailData );
+		return APN_USB_ERR_OPEN;		// Failure to open device
+	}
+
+	_tcscpy( SysDeviceName, pInterfaceDetailData->DevicePath );
+
+	free( pInterfaceDetailData );
+
+	FreeLibrary( hinstLib );
+
+	return APN_USB_SUCCESS;		// Success
+}
+
+
+APN_USB_TYPE ApnUsbClose( HANDLE *hDevice )
+{
+	if ( (*hDevice != INVALID_HANDLE_VALUE) && (*hDevice != NULL) )
+	{
+		CloseHandle( *hDevice );
+		*hDevice = NULL;
+	}
+
+	return APN_USB_SUCCESS;		// Success
+}
+
+
+APN_USB_TYPE ApnUsbDiscovery( unsigned short *UsbCamCount, 
+							  APN_USB_CAMINFO UsbCamInfo[] )
+{
+	HANDLE								hDriver;
+	HDEVINFO							hDeviceInfo;
+	SP_INTERFACE_DEVICE_DATA			InterfaceData;
+	PSP_INTERFACE_DEVICE_DETAIL_DATA	pInterfaceDetailData;
+	ULONG								RequiredSize;
+	ULONG								PredictedSize;
+	
+	HINSTANCE							hinstLib; 
+    RTSetupDiGetClassDevs				RTSetupDiGetClassDevsAddress; 
+	RTSetupDiEnumDeviceInterfaces		RTSetupDiEnumDeviceInterfacesAddress;
+	RTSetupDiGetDeviceInterfaceDetail	RTSetupDiGetDeviceInterfaceDetailAddress;
+
+	
+	*UsbCamCount = 0;
+
+    hinstLib = LoadLibrary( "setupapi" ); 
+ 
+    // If the handle is valid, try to get the function address.
+ 
+    if (hinstLib == NULL) 
+	{
+		return APN_USB_ERR_OPEN;		// Failure to open device
+	}
+	else
+	{ 
+		RTSetupDiGetClassDevsAddress = 
+			(RTSetupDiGetClassDevs)GetProcAddress(hinstLib, "SetupDiGetClassDevsA");
+
+		RTSetupDiEnumDeviceInterfacesAddress = 
+			(RTSetupDiEnumDeviceInterfaces)GetProcAddress(hinstLib, "SetupDiEnumDeviceInterfaces");
+																			  
+        RTSetupDiGetDeviceInterfaceDetailAddress = 
+			(RTSetupDiGetDeviceInterfaceDetail)GetProcAddress(hinstLib, "SetupDiGetDeviceInterfaceDetailA");
+
+		if ( (RTSetupDiGetClassDevsAddress == NULL) ||
+			 (RTSetupDiEnumDeviceInterfacesAddress == NULL) ||
+			 (RTSetupDiGetDeviceInterfaceDetailAddress == NULL) )
+		{
+			FreeLibrary( hinstLib );
+			return APN_USB_ERR_OPEN;
+		}
+			
+	}
+
+	for ( int i=0; i<APN_USB_MAXCAMERAS; i++ )
+	{
+		hDeviceInfo = ((RTSetupDiGetClassDevsAddress)( (LPGUID) &GUID_USBWDM_DEVICE_INTERFACE_CLASS,
+													  NULL,
+													  NULL,
+													  DIGCF_PRESENT | DIGCF_INTERFACEDEVICE ));
+
+		if ( hDeviceInfo == INVALID_HANDLE_VALUE )
+		{
+			FreeLibrary( hinstLib );
+			return APN_USB_ERR_OPEN;
+		}
+
+		// We must set the size before making the call to SetupDiEnumDeviceInterfaces
+		InterfaceData.cbSize = sizeof( SP_DEVICE_INTERFACE_DATA );
+
+		if ((RTSetupDiEnumDeviceInterfacesAddress)( hDeviceInfo,
+													0,
+													(LPGUID) &GUID_USBWDM_DEVICE_INTERFACE_CLASS,
+													i, 
+													&InterfaceData ) == false)
+		{
+			FreeLibrary( hinstLib );
+			return APN_USB_ERR_OPEN;
+		}
+
+		// This first call to SetupDiGetDeviceInterfaceDetail will fail, but
+		// the RequiredSize is set to the correct value for the second call.
+		// See the DDK documentation for more info.
+		(RTSetupDiGetDeviceInterfaceDetailAddress)( hDeviceInfo,
+													&InterfaceData,
+													NULL,
+													0,
+													&RequiredSize,
+													NULL );
+
+		PredictedSize		 = RequiredSize;
+		pInterfaceDetailData = ( PSP_INTERFACE_DEVICE_DETAIL_DATA ) malloc ( PredictedSize );
+		pInterfaceDetailData->cbSize	= sizeof( SP_INTERFACE_DEVICE_DETAIL_DATA );
+
+		if ((RTSetupDiGetDeviceInterfaceDetailAddress)( hDeviceInfo,
+														&InterfaceData,
+														pInterfaceDetailData,
+														PredictedSize,
+														&RequiredSize,
+														NULL ) == false )
+		{
+			FreeLibrary( hinstLib );
+			return APN_USB_ERR_OPEN;
+		}
+
+		// Open the driver
+		hDriver = CreateFile( pInterfaceDetailData->DevicePath,
+						      GENERIC_WRITE | GENERIC_READ,
+							  FILE_SHARE_WRITE | FILE_SHARE_READ,
+							  NULL,
+							  OPEN_EXISTING,
+							  0,
+							  NULL );
+
+		if ( hDriver != INVALID_HANDLE_VALUE )
+		{
+			// first set the camera number
+			UsbCamInfo[*UsbCamCount].CamNumber = i;
+
+			// now determine the camera model with a read operation
+			BOOLEAN Success;
+			USHORT	FpgaReg;
+			USHORT	RegData;
+			ULONG	BytesReceived;
+
+			FpgaReg = 100;
+
+			Success = DeviceIoControl( hDriver,
+									   IOCTL_WDM_READ_USB_USHORT,
+									   &FpgaReg,
+									   sizeof( USHORT ),
+									   &RegData,			// register data returned
+									   sizeof( USHORT ),	// number of bytes requested
+									   &BytesReceived,		// number of bytes received
+									   NULL );
+
+			if ( Success )
+			{
+				UsbCamInfo[*UsbCamCount].CamModel = RegData & 0x00FF;
+				(*UsbCamCount)++;		
+			}
+		}
+
+		free( pInterfaceDetailData );
+	}
+
+	FreeLibrary( hinstLib );
+
+	return APN_USB_SUCCESS;
+}
+
+
+APN_USB_TYPE ApnUsbReadReg( HANDLE *hDevice, unsigned short FpgaReg, unsigned short *FpgaData )
+{
+	BOOLEAN Success;
+	USHORT	RegData;
+	DWORD	BytesRequested;
+	DWORD	BytesReceived;
+
+	if ( (*hDevice == INVALID_HANDLE_VALUE) || (*hDevice == NULL) )
+	{
+		return APN_USB_ERR_OPEN;
+	}
+
+	BytesRequested = sizeof( USHORT );
+
+	Success = DeviceIoControl( *hDevice,
+							   IOCTL_WDM_READ_USB_USHORT,
+							   &FpgaReg,
+							   sizeof( USHORT ),
+							   &RegData,
+							   BytesRequested,
+							   &BytesReceived,
+							   NULL );
+
+	if ( (!Success) || (BytesReceived != BytesRequested) )
+	{
+		return APN_USB_ERR_READ;
+	}
+
+	*FpgaData = RegData;
+
+	return APN_USB_SUCCESS;		// Success
+}
+
+
+APN_USB_TYPE ApnUsbWriteReg( HANDLE *hDevice, unsigned short FpgaReg, unsigned short FpgaData )
+{
+	BOOLEAN Success;
+	ULONG	InBuffer[2];
+	DWORD	BytesReceived;
+
+
+	if ( (*hDevice == INVALID_HANDLE_VALUE) || (*hDevice == NULL) )
+	{
+		return APN_USB_ERR_OPEN;
+	}
+
+	InBuffer[0] = FpgaReg;
+	InBuffer[1] = FpgaData;
+
+	Success = DeviceIoControl( *hDevice,	
+							   IOCTL_WDM_WRITE_USB_USHORT,	
+							   &InBuffer,	
+							   sizeof ( InBuffer ),		
+							   NULL,					
+							   0,						
+							   &BytesReceived,		
+							   NULL );
+
+	if ( !Success )
+		return APN_USB_ERR_WRITE;
+
+	return APN_USB_SUCCESS;		// Success
+}
+
+
+APN_USB_TYPE ApnUsbWriteRegMulti( HANDLE *hDevice,
+								  unsigned short FpgaReg, 
+								  unsigned short FpgaData[], 
+								  unsigned short RegCount )
+{
+	unsigned short	Counter;
+
+	for ( Counter=0; Counter<RegCount; Counter++ )
+	{
+		if ( ApnUsbWriteReg( hDevice, FpgaReg, FpgaData[Counter] ) != APN_USB_SUCCESS )
+		{
+			return APN_USB_ERR_WRITE;
+		}
+	}
+
+	return APN_USB_SUCCESS;		// Success
+}
+
+
+APN_USB_TYPE ApnUsbWriteRegMultiMRMD( HANDLE *hDevice,
+									  unsigned short FpgaReg[], 
+									  unsigned short FpgaData[],
+									  unsigned short RegCount )
+{
+	unsigned short	Counter;
+
+	for ( Counter=0; Counter<RegCount; Counter++ )
+	{
+		if ( ApnUsbWriteReg( hDevice, FpgaReg[Counter], FpgaData[Counter] ) != APN_USB_SUCCESS )
+		{
+			return APN_USB_ERR_WRITE;
+		}
+	}
+
+	return APN_USB_SUCCESS;
+}
+
+
+APN_USB_TYPE ApnUsbReadStatusRegs( HANDLE			*hDevice,
+								   bool				UseAdvStatus,
+								   unsigned short	*StatusReg,
+			 					   unsigned short	*HeatsinkTempReg,
+								   unsigned short	*CcdTempReg,
+								   unsigned short	*CoolerDriveReg,
+								   unsigned short	*VoltageReg,
+								   unsigned short	*TdiCounter,
+								   unsigned short	*SequenceCounter,
+								   unsigned short	*MostRecentFrame,
+								   unsigned short	*ReadyFrame,
+								   unsigned short	*CurrentFrame )
+{
+	BOOLEAN			Success;
+	DWORD			BytesReceived;
+	unsigned char	StatusData[21];	
+	unsigned char	AdvStatusData[27];
+	unsigned short	*Data;
+
+	
+	if ( UseAdvStatus )
+	{
+		Success = DeviceIoControl( *hDevice,
+								   IOCTL_WDM_USB_STATUS,
+								   NULL,
+								   0,
+								   &AdvStatusData,
+								   27,
+								   &BytesReceived,
+								   NULL );
+
+		if ( !Success )
+			return APN_USB_ERR_STATUS;
+
+		Data = (unsigned short *)AdvStatusData;
+
+		*HeatsinkTempReg	= Data[0];
+		*CcdTempReg			= Data[1];
+		*CoolerDriveReg		= Data[2];
+		*VoltageReg			= Data[3];
+		*TdiCounter			= Data[4];
+		*SequenceCounter	= Data[5];
+		*StatusReg			= Data[6];
+
+		*MostRecentFrame	= Data[8];
+		*ReadyFrame			= Data[9];
+		*CurrentFrame		= Data[10];
+
+		if ( (AdvStatusData[26] & 0x01) != 0 )
+		{
+			*StatusReg |= 0x8;
+		}
+	}
+	else
+	{
+		Success = DeviceIoControl( *hDevice,
+								   IOCTL_WDM_USB_STATUS,
+								   NULL,
+								   0,
+								   &StatusData,
+								   21,
+								   &BytesReceived,
+								   NULL );
+
+		if ( !Success )
+			return APN_USB_ERR_STATUS;
+
+		Data = (unsigned short *)StatusData;
+
+		*HeatsinkTempReg	= Data[0];
+		*CcdTempReg			= Data[1];
+		*CoolerDriveReg		= Data[2];
+		*VoltageReg			= Data[3];
+		*TdiCounter			= Data[4];
+		*SequenceCounter	= Data[5];
+		*StatusReg			= Data[6];
+
+		*MostRecentFrame	= 0;
+		*ReadyFrame			= 0;
+		*CurrentFrame		= 0;
+
+		if ( (StatusData[20] & 0x01) != 0 )
+		{
+			*StatusReg |= 0x8;
+		}
+	}
+
+	return APN_USB_SUCCESS;
+}
+
+
+APN_USB_TYPE ApnUsbStartExp( HANDLE			*hDevice,
+							 unsigned short ImageCount,
+							 unsigned short ImageWidth,
+							 unsigned short ImageHeight )
+{
+	BOOLEAN Success;
+	ULONG	ImageSize;
+	ULONG	BytesReceived;
+	ULONG	DeviceData[2];
+
+
+	if ( (*hDevice == INVALID_HANDLE_VALUE) || (*hDevice == NULL) )
+	{
+		return APN_USB_ERR_OPEN;
+	}
+
+	if ( (ImageWidth == 0) || (ImageHeight == 0 ) )
+	{
+		return APN_USB_ERR_START_EXP;
+	}
+
+	ImageSize	= ImageWidth * ImageHeight;
+
+	if ( ImageCount == 1 )
+	{
+		Success = DeviceIoControl( *hDevice,	
+								   IOCTL_WDM_PRIME_USB_DOWNLOAD,	
+								   &ImageSize,	
+								   sizeof( ULONG ),		
+								   NULL,					
+								   0,						
+								   &BytesReceived,		
+								   NULL );
+	}
+    else
+	{
+		DeviceData[0] = ImageSize;
+		DeviceData[1] = ImageCount;
+
+		Success = DeviceIoControl( *hDevice,
+								   IOCTL_WDM_PRIME_USB_SEQUENCE_DOWNLOAD,
+								   DeviceData,
+								   sizeof(ULONG) * 2,
+								   NULL,
+								   0,
+								   &BytesReceived,
+								   NULL );
+	}
+
+	if ( !Success )
+	{
+		return APN_USB_ERR_START_EXP;
+	}
+
+	return APN_USB_SUCCESS;
+}
+
+
+APN_USB_TYPE ApnUsbStartCI(	HANDLE			*hDevice,
+							unsigned short	ImageWidth,
+							unsigned short	ImageHeight )
+{
+	BOOLEAN Success;
+	ULONG	ImageSize;
+	ULONG	BytesReceived;
+	ULONG	DeviceData;
+
+
+	if ( (*hDevice == INVALID_HANDLE_VALUE) || (*hDevice == NULL) )
+	{
+		return APN_USB_ERR_OPEN;
+	}
+
+	if ( (ImageWidth == 0) || (ImageHeight == 0 ) )
+	{
+		return APN_USB_ERR_START_CI;
+	}
+
+	ImageSize	= ImageWidth * ImageHeight;
+
+	DeviceData = ImageSize;
+
+	Success = DeviceIoControl( *hDevice,
+							   IOCTL_WDM_PRIME_CONTINUOUS_IMAGING,
+							   &DeviceData,
+							   sizeof(ULONG),
+							   NULL,
+							   0,
+							   &BytesReceived,
+							   NULL );
+
+	if ( !Success )
+	{
+		return APN_USB_ERR_START_CI;
+	}
+
+	return APN_USB_SUCCESS;
+}
+
+
+APN_USB_TYPE ApnUsbStopExp( HANDLE *hDevice, bool DigitizeData )
+{
+	BOOLEAN Success;
+	ULONG	BytesReceived;
+
+
+	if ( (*hDevice == INVALID_HANDLE_VALUE) || (*hDevice == NULL) )
+	{
+		return APN_USB_ERR_OPEN;
+	}
+
+	if ( DigitizeData == false )
+	{
+		Success = DeviceIoControl( *hDevice,	
+								   IOCTL_WDM_STOP_USB_IMAGE,	
+								   NULL,
+								   0,	
+								   NULL,					
+								   0,						
+								   &BytesReceived,		
+								   NULL );
+    
+		if ( !Success )
+		{
+			return APN_USB_ERR_STOP_EXP;
+		}
+	}
+
+	return APN_USB_SUCCESS;
+}
+
+
+APN_USB_TYPE ApnUsbStopCI( HANDLE *hDevice, unsigned short PostStopCount )
+{
+	BOOLEAN Success;
+	ULONG	BytesReceived;
+	USHORT	DownloadCountPostStop;
+
+
+	if ( (*hDevice == INVALID_HANDLE_VALUE) || (*hDevice == NULL) )
+	{
+		return APN_USB_ERR_OPEN;
+	}
+
+	DownloadCountPostStop = PostStopCount;
+
+	Success = DeviceIoControl( *hDevice,	
+							   IOCTL_WDM_STOP_CONTINUOUS_IMAGING,	
+							   &DownloadCountPostStop,
+							   sizeof(unsigned short),	
+							   NULL,					
+							   0,						
+							   &BytesReceived,		
+							   NULL );
+
+	if ( !Success )
+	{
+		return APN_USB_ERR_STOP_CI;
+	}
+
+	return APN_USB_SUCCESS;
+}
+
+
+APN_USB_TYPE ApnUsbGetImage( HANDLE *hDevice, 
+							 unsigned long ImgSizeBytes, 
+							 unsigned short *pMem )
+{
+	BOOLEAN Success;
+	ULONG	ImageBytesRemaining;
+	ULONG	ReceivedSize;
+	PUCHAR  pRequestData;
+
+	LARGE_INTEGER	Frequency;
+	LARGE_INTEGER	Start, Finish;
+	double			ElapsedTime;
+	double			DownloadRate;
+
+
+	if ( (*hDevice == INVALID_HANDLE_VALUE) || (*hDevice == NULL) )
+	{
+		return APN_USB_ERR_OPEN;
+	}
+
+	ImageBytesRemaining = ImgSizeBytes;
+
+	pRequestData = new UCHAR[IMAGE_BUFFER_SIZE];
+
+	////////////////////////
+	ULONG LoopCount = ImgSizeBytes / IMAGE_BUFFER_SIZE;
+	ULONG Remainder	= ImgSizeBytes - ( LoopCount * IMAGE_BUFFER_SIZE );
+	ULONG MemIterator = IMAGE_BUFFER_SIZE / 2;
+	ULONG Counter;
+
+	ULONG TotalPixels = 0;
+
+
+	Success = FALSE;
+
+	QueryPerformanceFrequency(&Frequency);
+
+	for ( Counter=0; Counter<LoopCount; Counter++ )
+	{
+		QueryPerformanceCounter( &Start );
+
+		Success = DeviceIoControl( *hDevice,
+								   IOCTL_WDM_READ_USB_IMAGE,
+								   NULL,
+								   0,
+								   (PUCHAR)pMem, // pRequestData,
+								   IMAGE_BUFFER_SIZE,
+								   &ReceivedSize,
+								   NULL );
+
+
+		QueryPerformanceCounter( &Finish );
+
+		ElapsedTime = (double)(Finish.QuadPart - Start.QuadPart)/(double)(Frequency.QuadPart);
+
+		DownloadRate = (IMAGE_BUFFER_SIZE / 2) / ElapsedTime;
+
+		char szTemp[256];
+		sprintf( szTemp, "Sample Rate = %f MP/s", DownloadRate );
+		// OutputDebugString( szTemp );
+
+		TotalPixels += (ReceivedSize / 2);
+
+		if ( (!Success) || (ReceivedSize != IMAGE_BUFFER_SIZE) )
+		{
+			Success = FALSE;
+			break;
+		}
+		else
+		{
+			pMem += MemIterator;
+		}
+	}
+	
+	if ( ((Success) && (Remainder != 0)) || (LoopCount == 0) )
+	{
+		Success = DeviceIoControl( *hDevice,
+								   IOCTL_WDM_READ_USB_IMAGE,
+								   NULL,
+								   0,
+								   (PUCHAR)pMem, // pRequestData,
+								   Remainder,
+								   &ReceivedSize,
+								   NULL );
+
+		TotalPixels += (ReceivedSize / 2);
+
+		if ( ReceivedSize != Remainder )
+			Success = FALSE;
+	}
+
+	delete [] pRequestData;
+
+	if ( !Success )
+		return APN_USB_ERR_IMAGE_DOWNLOAD;
+
+	return APN_USB_SUCCESS;		// Success
+}
+
+
+APN_USB_TYPE ApnUsbReset( HANDLE *hDevice )
+{
+	BOOLEAN Success;
+	ULONG	BytesReceived;
+
+
+	if ( (*hDevice == INVALID_HANDLE_VALUE) || (*hDevice == NULL) )
+	{
+		return APN_USB_ERR_OPEN;
+	}
+
+	Success = DeviceIoControl( *hDevice,	
+							   IOCTL_WDM_USB_RESET,	
+							   NULL,
+							   0,	
+							   NULL,					
+							   0,						
+							   &BytesReceived,		
+							   NULL );
+    
+	if ( !Success )
+	{
+		return APN_USB_ERR_RESET;
+	}
+
+	return APN_USB_SUCCESS;
+}
+
+
+APN_USB_TYPE ApnUsbSerialReadSettings( HANDLE		  *hDevice,
+									   unsigned short SerialId,
+									   unsigned char  *Settings )
+{
+	BOOLEAN	Success;
+	DWORD	BytesReceived;
+	UCHAR	Port;
+
+
+	// Require a valid handle to the device
+	if ( (*hDevice == INVALID_HANDLE_VALUE) || (*hDevice == NULL) )
+	{
+		return APN_USB_ERR_SERIAL_OPEN;
+	}
+
+	// Require a valid serial port selection
+	if ( (SerialId != 0) && (SerialId != 1) )
+	{
+		return APN_USB_ERR_SERIAL_ID;
+	}
+
+	Port = (UCHAR)SerialId;
+
+	// Issue the IOCTL to the USB device
+	Success = DeviceIoControl( *hDevice,
+							   IOCTL_WDM_READ_USB_SERIAL_SETTINGS,
+							   &Port,
+							   sizeof( UCHAR ),
+							   Settings,
+							   APN_USB_SERIAL_SETTINGS_BYTE_COUNT,
+							   &BytesReceived,
+							   NULL );
+
+	if ( (!Success) || (BytesReceived != APN_USB_SERIAL_SETTINGS_BYTE_COUNT) )
+		return APN_USB_ERR_SERIAL_READ_SETTINGS;
+
+	return APN_USB_SUCCESS;
+}
+
+
+APN_USB_TYPE ApnUsbSerialWriteSettings( HANDLE		   *hDevice,
+										unsigned short SerialId,
+										unsigned char  *Settings )
+{
+	BOOLEAN			Success;
+	DWORD			BytesReceived;
+	unsigned char	OutBuffer[1+APN_USB_SERIAL_SETTINGS_BYTE_COUNT];
+
+
+	// Require a valid handle to the device
+	if ( (*hDevice == INVALID_HANDLE_VALUE) || (*hDevice == NULL) )
+	{
+		return APN_USB_ERR_SERIAL_OPEN;
+	}
+
+	// Require a valid serial port selection
+	if ( (SerialId != 0) && (SerialId != 1) )
+	{
+		return APN_USB_ERR_SERIAL_ID;
+	}
+
+	OutBuffer[0] = (BYTE)SerialId;
+	memcpy( &OutBuffer[1], Settings, APN_USB_SERIAL_SETTINGS_BYTE_COUNT );
+	
+	// Issue the IOCTL to the USB device
+	Success = DeviceIoControl( *hDevice,
+							   IOCTL_WDM_WRITE_USB_SERIAL_SETTINGS,
+							   &OutBuffer,
+							   sizeof( OutBuffer ),
+							   NULL,
+							   0,
+							   &BytesReceived,
+							   NULL );
+
+	if ( !Success ) 
+		return APN_USB_ERR_SERIAL_WRITE_SETTINGS;
+
+	return APN_USB_SUCCESS;
+}
+
+
+APN_USB_TYPE ApnUsbSerialReadBaudRate( HANDLE		  *hDevice,
+									   unsigned short SerialId,
+									   unsigned long  *BaudRate )
+{
+	unsigned char SettingsBuffer[APN_USB_SERIAL_SETTINGS_BYTE_COUNT];	
+
+
+	// Require a valid handle to the device
+	if ( (*hDevice == INVALID_HANDLE_VALUE) || (*hDevice == NULL) )
+	{
+		return APN_USB_ERR_SERIAL_OPEN;
+	}
+
+	// Require a valid serial port selection
+	if ( (SerialId != 0) && (SerialId != 1) )
+	{
+		return APN_USB_ERR_SERIAL_ID;
+	}
+
+	// Read the current settings for the serial port
+	if ( ApnUsbSerialReadSettings(hDevice, SerialId, SettingsBuffer) != APN_USB_SUCCESS )
+	{
+		return APN_USB_ERR_SERIAL_READ_SETTINGS;
+		
+		*BaudRate = 0;
+	}
+	
+	*BaudRate = ((unsigned long *)SettingsBuffer)[0];
+
+	return APN_USB_SUCCESS;
+}
+
+
+APN_USB_TYPE ApnUsbSerialWriteBaudRate( HANDLE		   *hDevice,
+									    unsigned short SerialId,
+										unsigned long  BaudRate )
+{
+	unsigned char SettingsBuffer[APN_USB_SERIAL_SETTINGS_BYTE_COUNT];	
+
+
+	// Require a valid handle to the device
+	if ( (*hDevice == INVALID_HANDLE_VALUE) || (*hDevice == NULL) )
+	{
+		return APN_USB_ERR_SERIAL_OPEN;
+	}
+
+	// Require a valid serial port selection
+	if ( (SerialId != 0) && (SerialId != 1) )
+	{
+		return APN_USB_ERR_SERIAL_ID;
+	}
+
+	// Read the current settings for the serial port
+	if ( ApnUsbSerialReadSettings(hDevice, SerialId, SettingsBuffer) != APN_USB_SUCCESS )
+	{
+		return APN_USB_ERR_SERIAL_READ_SETTINGS;
+	}
+
+	// Modify our baud rate variable
+	((unsigned long *)SettingsBuffer)[0] = BaudRate;
+	
+	// Write the new settings for the serial port
+	if ( ApnUsbSerialWriteSettings(hDevice, SerialId, SettingsBuffer) != APN_USB_SUCCESS )
+	{
+		return APN_USB_ERR_SERIAL_WRITE_SETTINGS;
+	}
+
+	return APN_USB_SUCCESS;
+}
+
+
+APN_USB_TYPE ApnUsbSerialReadFlowControl( HANDLE		 *hDevice,
+										  unsigned short SerialId,
+								 		  bool			 *FlowControl )
+{
+	unsigned char SettingsBuffer[APN_USB_SERIAL_SETTINGS_BYTE_COUNT];	
+
+
+	// Require a valid handle to the device
+	if ( (*hDevice == INVALID_HANDLE_VALUE) || (*hDevice == NULL) )
+	{
+		return APN_USB_ERR_SERIAL_OPEN;
+	}
+
+	// Require a valid serial port selection
+	if ( (SerialId != 0) && (SerialId != 1) )
+	{
+		return APN_USB_ERR_SERIAL_ID;
+	}
+	
+	// Read the current settings for the serial port
+	if ( ApnUsbSerialReadSettings(hDevice, SerialId, SettingsBuffer) != APN_USB_SUCCESS )
+	{
+		return APN_USB_ERR_SERIAL_READ_SETTINGS;
+	}
+
+	if ( (SettingsBuffer[APN_USB_SERIAL_SETTINGS_CTRL_INDEX] & APN_USB_SERIAL_BIT_FLOW_CONTROL) == 0 )
+		*FlowControl = false;
+	else
+		*FlowControl = true;
+
+	return APN_USB_SUCCESS;
+}
+
+
+APN_USB_TYPE ApnUsbSerialWriteFlowControl( HANDLE		  *hDevice,
+										   unsigned short SerialId,
+								 		   bool			  FlowControl )
+{
+	unsigned char SettingsBuffer[APN_USB_SERIAL_SETTINGS_BYTE_COUNT];	
+
+
+	// Require a valid handle to the device
+	if ( (*hDevice == INVALID_HANDLE_VALUE) || (*hDevice == NULL) )
+	{
+		return APN_USB_ERR_SERIAL_OPEN;
+	}
+
+	// Require a valid serial port selection
+	if ( (SerialId != 0) && (SerialId != 1) )
+	{
+		return APN_USB_ERR_SERIAL_ID;
+	}
+
+	// Read the current settings for the serial port
+	if ( ApnUsbSerialReadSettings(hDevice, SerialId, SettingsBuffer) != APN_USB_SUCCESS )
+	{
+		return APN_USB_ERR_SERIAL_READ_SETTINGS;
+	}
+
+	// Modify the flow control bit
+	if ( FlowControl )
+		SettingsBuffer[APN_USB_SERIAL_SETTINGS_CTRL_INDEX] |= APN_USB_SERIAL_BIT_FLOW_CONTROL;
+	else
+		SettingsBuffer[APN_USB_SERIAL_SETTINGS_CTRL_INDEX] &= ~APN_USB_SERIAL_BIT_FLOW_CONTROL;
+
+	// Write the new settings for the serial port
+	if ( ApnUsbSerialWriteSettings(hDevice, SerialId, SettingsBuffer) != APN_USB_SUCCESS )
+	{
+		return APN_USB_ERR_SERIAL_WRITE_SETTINGS;
+	}
+
+	return APN_USB_SUCCESS;
+}
+
+
+APN_USB_TYPE ApnUsbSerialReadParity( HANDLE			*hDevice,
+									 unsigned short SerialId,
+									 ApnUsbParity   *Parity )
+{
+	unsigned char	SettingsBuffer[APN_USB_SERIAL_SETTINGS_BYTE_COUNT];	
+	bool			bParityEnable;
+	bool			bParityOdd;
+
+
+	// Require a valid handle to the device
+	if ( (*hDevice == INVALID_HANDLE_VALUE) || (*hDevice == NULL) )
+	{
+		return APN_USB_ERR_SERIAL_OPEN;
+	}
+
+	// Require a valid serial port selection
+	if ( (SerialId != 0) && (SerialId != 1) )
+	{
+		return APN_USB_ERR_SERIAL_ID;
+	}
+
+	// Read the current settings for the serial port
+	if ( ApnUsbSerialReadSettings(hDevice, SerialId, SettingsBuffer) != APN_USB_SUCCESS )
+	{
+		return APN_USB_ERR_SERIAL_READ_SETTINGS;
+	}
+
+	if ( (SettingsBuffer[APN_USB_SERIAL_SETTINGS_CTRL_INDEX] & APN_USB_SERIAL_BIT_PARITY_ENABLE) == 0 )
+		bParityEnable = false;
+	else
+		bParityEnable = true;
+
+	if ( (SettingsBuffer[APN_USB_SERIAL_SETTINGS_CTRL_INDEX] & APN_USB_SERIAL_BIT_PARITY_ODD) == 0 )
+		bParityOdd = false;
+	else
+		bParityOdd = true;
+
+	if ( !bParityEnable )
+	{
+		*Parity = ApnUsbParity_None;
+	}
+	else
+	{
+		if ( bParityOdd )
+			*Parity = ApnUsbParity_Odd;
+		else
+			*Parity = ApnUsbParity_Even;
+	}
+
+	return APN_USB_SUCCESS;
+}
+
+
+APN_USB_TYPE ApnUsbSerialWriteParity( HANDLE		 *hDevice,
+									  unsigned short SerialId,
+									  ApnUsbParity   Parity )
+{
+	unsigned char SettingsBuffer[APN_USB_SERIAL_SETTINGS_BYTE_COUNT];	
+
+
+	// Require a valid handle to the device
+	if ( (*hDevice == INVALID_HANDLE_VALUE) || (*hDevice == NULL) )
+	{
+		return APN_USB_ERR_SERIAL_OPEN;
+	}
+
+	// Require a valid serial port selection
+	if ( (SerialId != 0) && (SerialId != 1) )
+	{
+		return APN_USB_ERR_SERIAL_ID;
+	}
+
+	// Read the current settings for the serial port
+	if ( ApnUsbSerialReadSettings(hDevice, SerialId, SettingsBuffer) != APN_USB_SUCCESS )
+	{
+		return APN_USB_ERR_SERIAL_READ_SETTINGS;
+	}
+
+	if ( Parity == ApnUsbParity_None )
+	{
+		SettingsBuffer[APN_USB_SERIAL_SETTINGS_CTRL_INDEX] &= ~APN_USB_SERIAL_BIT_PARITY_ENABLE;
+	}
+	else
+	{
+		SettingsBuffer[APN_USB_SERIAL_SETTINGS_CTRL_INDEX] |= APN_USB_SERIAL_BIT_PARITY_ENABLE;
+
+		if ( Parity == ApnUsbParity_Odd )
+			SettingsBuffer[APN_USB_SERIAL_SETTINGS_CTRL_INDEX] |= APN_USB_SERIAL_BIT_PARITY_ODD;
+		else
+			SettingsBuffer[APN_USB_SERIAL_SETTINGS_CTRL_INDEX] &= ~APN_USB_SERIAL_BIT_PARITY_ODD;
+	}
+
+	// Write the new settings for the serial port
+	if ( ApnUsbSerialWriteSettings(hDevice, SerialId, SettingsBuffer) != APN_USB_SUCCESS )
+	{
+		return APN_USB_ERR_SERIAL_WRITE_SETTINGS;
+	}
+
+	return APN_USB_SUCCESS;
+}
+
+
+APN_USB_TYPE ApnUsbSerialRead( HANDLE		  *hDevice,
+							   unsigned short SerialId,
+							   char			  *ReadBuffer,
+							   unsigned short *BufferCount )
+{
+	BOOLEAN	Success;
+	DWORD	BytesReceived;
+	BYTE	PortNumber;
+	char	TempBuffer[64];
+	DWORD	TempBufferSize;
+
+
+	// Require a valid handle to the device
+	if ( (*hDevice == INVALID_HANDLE_VALUE) || (*hDevice == NULL) )
+	{
+		return APN_USB_ERR_SERIAL_OPEN;
+	}
+
+	// Require a valid serial port selection
+	if ( (SerialId != 0) && (SerialId != 1) )
+	{
+		return APN_USB_ERR_SERIAL_ID;
+	}
+
+	PortNumber = (BYTE)SerialId;
+
+	TempBufferSize = 64;
+
+	// Issue the IOCTL to the USB device
+	Success = DeviceIoControl( *hDevice,
+							   IOCTL_WDM_READ_USB_SERIAL,
+							   &PortNumber,
+							   sizeof( BYTE ),
+							   &TempBuffer,
+							   TempBufferSize,
+							   &BytesReceived,
+							   NULL );
+
+	if ( !Success )
+		return APN_USB_ERR_SERIAL_READ_PORT;
+
+	TempBuffer[BytesReceived] = '\0';
+
+	strcpy( ReadBuffer, TempBuffer );
+
+	*BufferCount = (unsigned short)BytesReceived;
+
+	return APN_USB_SUCCESS;
+}
+
+
+APN_USB_TYPE ApnUsbSerialWrite( HANDLE		   *hDevice,
+							    unsigned short SerialId,
+							    char		   *WriteBuffer,
+								unsigned short BufferCount )
+{
+	BOOLEAN	Success;
+	DWORD	BytesReceived;
+	DWORD	DeviceBufferByteCount;
+	PUCHAR	DeviceBuffer;
+
+
+	// Require a valid handle to the device
+	if ( (*hDevice == INVALID_HANDLE_VALUE) || (*hDevice == NULL) )
+	{
+		return APN_USB_ERR_SERIAL_OPEN;
+	}
+
+	// Require a valid serial port selection
+	if ( (SerialId != 0) && (SerialId != 1) )
+	{
+		return APN_USB_ERR_SERIAL_ID;
+	}
+	
+	DeviceBufferByteCount = BufferCount + 1;
+	DeviceBuffer = new UCHAR[DeviceBufferByteCount];
+
+	DeviceBuffer[0] = (UCHAR)SerialId;
+	memcpy( &(DeviceBuffer[1]), WriteBuffer, BufferCount );
+
+	// Issue the IOCTL to the USB device
+	Success = DeviceIoControl( *hDevice,
+							   IOCTL_WDM_WRITE_USB_SERIAL,
+							   DeviceBuffer,
+							   DeviceBufferByteCount,
+							   NULL,
+							   0,
+							   &BytesReceived,
+							   NULL );
+
+	delete [] DeviceBuffer;
+
+	if ( !Success )
+		return APN_USB_ERR_SERIAL_READ_PORT;
+
+	return APN_USB_SUCCESS;
+}
+
+
+APN_USB_TYPE ApnUsbReadVendorInfo( HANDLE *hDevice,
+								   unsigned short *VendorId,
+			 					   unsigned short *ProductId,
+								   unsigned short *DeviceId )
+{
+	BOOLEAN			Success;
+	DWORD			BytesReceived;
+	unsigned short	VendorData[3];	
+
+	
+	Success = DeviceIoControl( *hDevice,
+							   IOCTL_WDM_USB_VENDOR_INFO,
+							   NULL,
+							   0,
+							   VendorData,
+							   6,
+							   &BytesReceived,
+							   NULL );
+
+	if ( !Success )
+	{
+		*VendorId	= 0x0;
+		*ProductId	= 0x0;
+		*DeviceId	= 0x0;
+
+		return APN_USB_ERR_VENDOR_INFO;
+	}
+
+	*VendorId	= VendorData[0];
+	*ProductId	= VendorData[1];
+	*DeviceId	= VendorData[2];
+
+	return APN_USB_SUCCESS;
+}
+
+
+APN_USB_TYPE ApnUsbSysDriverVersion( HANDLE *hDevice,
+									 double *VersionNumber )
+{
+	BOOLEAN			Success;
+	DWORD			BytesReceived;
+	unsigned short	DriverData[2];	
+
+	
+	Success = DeviceIoControl( *hDevice,
+							   IOCTL_WDM_USB_DRIVER_VERSION,
+							   NULL,
+							   0,
+							   DriverData,
+							   4,
+							   &BytesReceived,
+							   NULL );
+
+	if ( !Success )
+	{
+		*VersionNumber = 0.0;
+
+		return APN_USB_ERR_DRIVER_VERSION;
+	}
+
+	*VersionNumber = DriverData[0] + ((double)DriverData[1] / 10 );
+
+	return APN_USB_SUCCESS;
+}
+
+
+APN_USB_TYPE ApnUsbReadCustomSerialNumber( HANDLE			*hDevice,
+										   char				*SerialNumber,
+										   unsigned short	*SerialNumberLength )
+{
+	BOOLEAN	Success;
+	char	pBuffer[APN_USB_SN_BYTE_COUNT+1];
+	DWORD	BytesReceived;
+	DWORD	Length;
+
+
+	/*
+	UsbRequest.Request		= VND_APOGEE_EEPROM;
+	UsbRequest.Direction	= REQUEST_IN;
+	UsbRequest.Index		= APN_USB_SN_EEPROM_ADDR;
+	UsbRequest.Value		= (unsigned short)( (APN_USB_SN_EEPROM_BANK<<8) | APN_USB_SN_EEPROM_CHIP );
+	*/
+
+	Length = APN_USB_SN_BYTE_COUNT + 1;
+
+	Success = DeviceIoControl( *hDevice,
+							   IOCTL_WDM_READ_CUSTOM_OEM_SERIAL_NUMBER,
+							   NULL,		
+							   0,
+							   pBuffer,
+							   Length,
+							   &BytesReceived,
+							   NULL );
+
+	if ( !Success )
+	{
+		strcpy( SerialNumber, "" );
+
+		*SerialNumberLength = 0;
+
+		return APN_USB_ERR_CUSTOM_SN_READ;
+	}
+
+	pBuffer[APN_USB_SN_BYTE_COUNT] = '\0';
+
+	strcpy( SerialNumber, strtok( pBuffer, "" ) );
+
+	*SerialNumberLength = strlen( SerialNumber );
+
+	return APN_USB_SUCCESS;
+}
+
+
+APN_USB_TYPE ApnUsbRead8051FirmwareRevision( HANDLE		*hDevice,
+											 char		*Revision )
+{
+	BOOLEAN	Success;
+	char	pBuffer[APN_USB_8051_REV_BYTE_COUNT+1];
+	DWORD	BytesReceived;
+	DWORD	Length;
+
+
+	Length = APN_USB_8051_REV_BYTE_COUNT+1;
+
+	Success = DeviceIoControl( hDevice,
+							   IOCTL_WDM_USB_8051_FIRMWARE_REVISION,
+							   NULL,		
+							   0,
+							   pBuffer,
+							   Length,
+							   &BytesReceived,
+							   NULL );
+
+	if ( !Success )
+	{
+		Revision[0] = 'F';
+		Revision[1] = 'F';
+		Revision[2] = 'F';
+
+		Revision[APN_USB_8051_REV_BYTE_COUNT] = '\0';
+
+		return APN_USB_ERR_8051_REV_READ;
+	}
+
+	Revision[APN_USB_8051_REV_BYTE_COUNT] = '\0';
+
+	return APN_USB_SUCCESS;
+}
+

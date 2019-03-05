@@ -1,0 +1,7 @@
+1. Try adding this line to /etc/fstab, and reboot
+
+none /proc/bus/usb usbfs defaults 0 0
+
+2. Check http://linux-hotplug.sourceforge.net/
+
+
