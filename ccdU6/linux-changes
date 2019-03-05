@@ -1,0 +1,79 @@
+Apogee.h
+	replace enums
+
+ApnCamera.h
+	add sensor data mirrors
+	remove "private"
+
+ApnCamData* - no changes
+
+ApnCamera.cpp - 
+	comment in sensors in InitDefaults
+	add CloseDriver() to constructor
+	add printfs in InitDefaults
+	replace QueryStatusRegs with single reads
+
+ApnCamera.h
+	remove "virtual "
+	remove virtual method initializers
+
+ApnCamera_NET.cpp 
+	subs CApnCamera_NET:: with CApnCamera::
+	remove constructor/destructor
+	remove "&m_hSession,"
+
+ApnCamera_USB.cpp 
+	subs CApnCamera_USB:: with CApnCamera::
+	remove constructor/destructor
+	move SetNetworkTransferMode from CApnCamera.cpp
+	remove "&m_hSysDriver,"
+
+ApnCamTable.cpp - no changes
+
+ApnCamera.i
+	replace Apn_???? with int
+
+
+ApogeeNet/ApogeeNet.h
+	ifdef windows includes
+	get rid of =NULL, use 0 to avoid warnings
+
+ApogeeNet/ApogeeNet.cpp
+add to top of file (after #includes)
+#ifdef LINUX
+#include "stdafx.h"
+#include <curl/curl.h>
+#include <curl/types.h>
+#include <curl/easy.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#define HINTERNET int
+#define _snprintf snprintf
+extern "C" {
+extern int InternetOpen( char *iname, int itype, int *dum, int *dum2, int dum3);
+extern int InternetOpenUrl( int g_hSession, char *url, int *dum1, int *dum2, int dum3, int dum4 );
+extern void InternetQueryDataAvailable(int handle, long *bcount, int dum1,
+int dum2);
+extern void InternetReadFile(int handle, char *lpBuffer, long bcount, long
+*bread);
+extern void InternetCloseHandle( int handle );
+           }
+#endif
+ 
+// Global variables used in this DLL
+HINTERNET       g_hSession;
+ULONG           g_NetImgSizeBytes;
+BOOLEAN         g_NetImgInProgress;
+BOOLEAN         g_FastDownload;
+char            g_HostAddr[80];
+ 
+Replace szUrl[80] with szUrl[8096]
+Replace "*hSession = " with "g_hSession = "
+Replace "*hSession = " with "g_hSession = "
+Replace "*hSession," with "g_hSession,"
+Replace "hService == NULL" with "hService == 0"
+Replace "lpBuffer[dwBytesRead]=NULL;" with "lpBuffer[dwBytesRead]=0;"
+Replace "pBuffer[dwBytesRead] = NULL;" with "pBuffer[dwBytesRead] = 0;"
+Comment out Windows WSA calls
+Comment out ApnNetConnect/ApnNetClose form serial port routines
+

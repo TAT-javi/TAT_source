@@ -1,0 +1,11 @@
+use --host=powerpc-apple-darwin6.0 if needed
+
+cp /usr/include/stdlib.h /usr/include/malloc.h
+
+Use -fPIC instead of -fpic
+
+Rebuild wget
+Rebuild swig
+Rebuild cfitsio (in fitsTcl tree)
+Rebuild fitsTcl
+Rebuild ccd

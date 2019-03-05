@@ -1,0 +1,174 @@
+#
+# APOGEE makefile for linux
+# $Id: Makefile.svr4,v 1.4 2004/02/15 07:34:43 rfactory Exp $
+#
+
+
+DEVHOME		= .
+INSTALL_DIR	= /opt/apogee/lib
+
+
+.KEEP_STATE:
+CC =	g++
+SWIG = /opt/apogee/bin/swig
+
+INCDIR		= $(DEVHOME)
+PRIVATEINCDIR	= ../../include
+GUIINC          = /opt/apogee/include
+ALTAINC		= -I./ApogeeUsb -I./ApogeeNet -I./FpgaRegs -DHAVE_STRERROR
+CPPFLAGS	= -O2 -g -fPIC -DWall -DLINUX -DOSX -I../../include -I.
+SWIGFLAGS	= -tcl8 -c++ -I/opt/apogee/lib/swig1.3 -I/opt/apogee/lib/swig1.3/tcl
+LDFLAGS		= -dynamiclib
+CONFIGTARGETS	= apogee_USB.dylib apogee_NET.dylib \
+		  serial_USB.dylib serial_NET.dylib
+
+all: $(CONFIGTARGETS)
+
+CamData:
+	$(CC) $(CPPFLAGS) -c ApnCamData.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_CCD3011.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_CCD3011B.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_CCD4240.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_CCD4240B.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_CCD4710.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_CCD4710B.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_CCD4710ALT.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_CCD4720.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_CCD4720B.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_CCD5520.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_CCD5520B.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_CCD5710B.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_CCD5710.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_CCD5710F.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_CCD7700.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_CCD7700B.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAF0261E.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAF0261EB.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAF0401E.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAF0401EB.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAF09000.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAF10011105.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAF1001E.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAF1001EB.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAF1001ENS.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAF1301E.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAF1301EB.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAF1401E.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAF3200E.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAF3200EB.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAF4202.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAF1602E.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAF1602EB.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAF16801E.cpp 
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAF6303E.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAF6303EB.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAI11000C.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAI2001CL.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAI2020CL.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAI2020CLB.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAI4020CL.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAI4020CLB.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAI11000CL.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAI2001M.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAI2020M.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAI4020M.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAI11000M.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAI2001ML.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAI2020ML.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAI2020MLB.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAI4020ML.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAI4020MLB.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAI11000ML.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAI2020C.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAI4020C.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_TH7899.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamData_KAF16803.cpp
+	$(CC) $(CPPFLAGS) -c ApnCamTable.cpp
+
+
+
+apogee_USB.dylib: CamData
+	$(CC) $(CPPFLAGS) $(ALTAINC) -c ApnCamera.cpp
+	$(CC) $(CPPFLAGS) $(ALTAINC) -c ApnCamera_USB.cpp
+	$(CC) $(CPPFLAGS) $(ALTAINC) -c ApnCamera_Linux.cpp
+	$(CC) $(CPPFLAGS) $(ALTAINC) -c ApogeeUsb/ApogeeUsbLinux.cpp 
+	$(SWIG) $(SWIGFLAGS) apogeeUSB.i
+	$(CC) $(CPPFLAGS) $(ALTAINC) -c apogeeUSB_wrap.c
+	$(CC) $(LDFLAGS) ApnCamera.o ApnCamera_Linux.o ApnCamera_USB.o \
+			ApogeeUsbLinux.o ApnCamData*.o ApnCamTable.o \
+			apogeeUSB_wrap.o -o apogee_USB.dylib -I. /opt/apogee/lib/libusb.dylib \
+                        -lpthread -framework CoreFoundation \
+                        -framework Tcl -framework IOKit /opt/apogee/lib/libccd.dylib \
+                        /opt/apogee/lib/libcfitsio.dylib
+ 
+
+serial_USB.dylib:
+	$(CC) $(CPPFLAGS) $(ALTAINC) -c ApnSerial.cpp
+	$(CC) $(CPPFLAGS) $(ALTAINC) -c ApnSerial_USB.cpp
+	$(SWIG) $(SWIGFLAGS) serialUSB.i
+	$(CC) $(CPPFLAGS) $(ALTAINC) -c serialUSB_wrap.c
+	$(CC) $(LDFLAGS) ApnSerial.o ApnSerial_USB.o serialUSB_wrap.o \
+			 -o serial_USB.dylib -I. /opt/apogee/lib/libusb.dylib \
+			/opt/apogee/lib/apogee_USB.dylib \
+                        -lpthread -framework CoreFoundation \
+                        -framework Tcl -framework IOKit 
+serial_NET.dylib:
+	$(CC) $(CPPFLAGS) $(ALTAINC) -c ApnSerial.cpp
+	$(CC) $(CPPFLAGS) $(ALTAINC) -c ApnSerial_NET.cpp
+	$(SWIG) $(SWIGFLAGS) serialNET.i
+	$(CC) $(CPPFLAGS) $(ALTAINC) -c serialNET_wrap.c
+	$(CC) $(LDFLAGS) ApnSerial.o ApnSerial_NET.o serialNET_wrap.o \
+			 -o serial_NET.dylib -I. \
+                        /opt/apogee/lib/libcurl.dylib -lz  \
+			-lpthread -framework CoreFoundation \
+                        -framework Tcl -framework IOKit 
+
+apogee_NET.dylib: CamData
+	$(CC) $(CPPFLAGS) $(ALTAINC) -c ApnCamera.cpp
+	$(CC) $(CPPFLAGS) $(ALTAINC) -c ApnCamera_NET.cpp
+	$(CC) $(CPPFLAGS) $(ALTAINC) -c ApnCamera_Linux.cpp
+	$(CC) $(CPPFLAGS) $(ALTAINC) -c ApogeeNet/ApogeeNet.cpp
+	$(CC) $(CPPFLAGS) $(ALTAINC) -c ApogeeNet/ApogeeNetLinux.c 
+	$(SWIG) $(SWIGFLAGS) apogeeNET.i
+	$(CC) $(CPPFLAGS) $(ALTAINC) -c apogeeNET_wrap.c
+	$(CC) $(LDFLAGS) ApnCamera.o ApnCamera_Linux.o ApnCamera_NET.o \
+			ApogeeNet.o ApogeeNetLinux.o ApnCamData*.o ApnCamTable.o \
+			apogeeNET_wrap.o -o apogee_NET.dylib -I. \
+                        /opt/apogee/lib/libcurl.dylib -lz \
+			-lpthread -framework CoreFoundation \
+                        -framework Tcl -framework IOKit /opt/apogee/lib/libccd.dylib \
+                        /opt/apogee/lib/libcfitsio.dylib
+ 
+
+
+test_altae: apogee_NET.dylib
+	$(CC) $(CPPFLAGS) $(ALTAINC) -DALTA_NET test_alta.cpp -IFpgaRegs -o test_altae \
+			ApogeeNet.o ApogeeNetLinux.o ApnCamData*.o ApnCamTable.o  \
+			ApnCamera.o ApnCamera_Linux.o ApnCamera_NET.o  \
+			-L/opt/apogee/lib  -lccd -lfitsTcl -lcfitsio \
+			/opt/apogee/lib/libcurl.dylib -lz \
+			-lpthread -framework CoreFoundation \
+                        -framework Tcl -framework IOKit
+
+test_altau: apogee_USB.dylib
+	$(CC) $(CPPFLAGS) $(ALTAINC) test_alta.cpp -IFpgaRegs -o test_altau \
+			ApogeeUsbLinux.o ApnCamData*.o ApnCamTable.o  \
+			ApnCamera.o ApnCamera_Linux.o ApnCamera_USB.o  \
+			-L/opt/apogee/lib  -lccd -lfitsTcl -lcfitsio \
+			/opt/apogee/lib/libusb.dylib \
+			-lpthread -framework CoreFoundation \
+                        -framework Tcl -framework IOKit
+
+install: $(CONFIGTARGETS) FORCE
+	cp $(CONFIGTARGETS) $(INSTALL_DIR)
+
+clean:
+	rm -f tags TAGS .make.state .nse_depinfo *.o *.dylib
+
+tags:
+	ctags $(LIBSOURCES)
+
+FORCE:
+
+
+

@@ -1,0 +1,1 @@
+ g++ -g test_alta.cpp -IFpgaRegs -o test  ApnCamera.o ApnCamera_Linux.o ApnCamera_USB.o ApogeeUsbLinux.o ApnCamData*.o ApnCamTable.o  -L/opt/apogee/lib -ltcl8.3 -lccd -lfitsTcl /opt/apogee/lib/libusb.so
