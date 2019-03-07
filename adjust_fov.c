@@ -35,6 +35,9 @@ void move_pulse(int ra_pulse, int dec_pulse)
 	if(dec_pulse <0){dec_isneg = 1; dec_pulse *= -1;}
 	else dec_isneg = 0;
 	
+	if(dec_pulse < 18) dec_pulse =0;
+	if(ra_pulse < 35) ra_pulse =0;
+		
 	if(dec_pulse)
 	{
 		dec_seconds=  (int) (0.5+ (dec_pulse/1000));
@@ -65,12 +68,7 @@ void move_pulse(int ra_pulse, int dec_pulse)
 		else
 			ra_speed = (ra_pulse/ra_seconds) + STAR_SPEED;
 		
-		if(ra_speed <0)
-		{
-			//Stop telescope ra_seconds seconds
-			sprintf(ra_cmd, "RA POS FREQUENCY 1 1 65534 0 0 0 0\n");
-		}
-		else
+		if(ra_speed >0)
 		{
 			ra_reg =(int)(0.5 + 1./(20*120.0e-9*ra_speed));
 		
@@ -192,19 +190,7 @@ void move_pixel(int RA, int DEC,int mode)//Move RA and DEC)
 			fprintf(daemon,"%s",cmd);
 			fclose(daemon);
 			if(mode) printf("Sent to DSP ==> %s\n",cmd);
-void move_degrees(float move_ra, float move_dec)
-{
-	int ra_sign,dec_sign;
-	
-	ra_sign =1;
-	dec_sign =1;
-	
-	if(move_ra < 0) {ra_sign = -1;move_ra *= -1;}
-	if(move_dec < 0) {dec_sign = -1;move_dec *= -1;}
-	
-	
-	
-}
+
 			sleep(wait_seconds);//wait for the star
 			sprintf( ra_cmd, "RA POS FREQUENCY 1 30030 9973 0 0 0 0\n");
 
