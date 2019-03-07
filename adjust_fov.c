@@ -48,7 +48,7 @@ void move_pulse(int ra_pulse, int dec_pulse)
 		dec_reg =(int)(0.5 + 1./(20*120.0e-9*dec_speed));
 
 		if(dec_reg > 65534)dec_reg=65534;
-		else if(dec_reg < 200)dec_reg=208;
+		else if(abs(dec_reg) < 208)dec_reg=208;
 
 		sprintf( dec_cmd, "DEC %s FREQUENCY 1 %d %d 0 0 0 0\n",dec_isneg?"NEG":"POS", dec_seconds ,dec_reg);
 
@@ -73,7 +73,7 @@ void move_pulse(int ra_pulse, int dec_pulse)
 			ra_reg =(int)(0.5 + 1./(20*120.0e-9*ra_speed));
 		
 			if(ra_reg > 65534)ra_reg=65534;
-			else if(ra_reg < 200)ra_reg=208;
+			else if(abs(ra_reg) < 208)ra_reg=208;
 		
 			sprintf( ra_cmd, "RA %s FREQUENCY 1 %d %d 0 0 0 0\n",ra_isneg?"NEG":"POS",ra_seconds,ra_reg);
 		}
