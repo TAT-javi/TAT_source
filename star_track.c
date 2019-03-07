@@ -719,7 +719,7 @@ to have time process following procedure */
 				
 				// move the telescope if more than 5 pixels difference, reset other whie
 			
-				if( abs(diff_ra) > 0 || abs(diff_dec) > 0) 
+				if( abs(diff_ra) > 35 || abs(diff_dec) > 18) 
 				{
 					move_pulse(diff_ra,diff_dec);
 				}
