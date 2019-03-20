@@ -692,6 +692,27 @@ to have time process following procedure */
 				sprintf(temp_string,"Image ra = %f, dec = %f\t diff_ra = %d, diff_dec = %d\n",
 					Current_pos.ra,Current_pos.dec,diff_ra,diff_dec);
 				
+				if( abs(diff_ra) > 100 || abs(diff_dec) > 50)
+				{//If difference too big repeat
+					if(p_tat_info->obs_info.FOV == FOV_TBC)
+					{
+						sprintf(temp_string,"%s => FOV is TBC",temp_string);
+					
+					}
+					else if(p_tat_info->obs_info.FOV == FOV_CORRECT)
+					{
+						sprintf(temp_string,"%s Difference too big. Don't move and set FOV=TBC",temp_string);
+						diff_ra =diff_dec =0;
+					}
+					p_tat_info->obs_info.FOV = FOV_TBC; //
+				}
+				else
+				{
+					sprintf(temp_string,"%s => FOV is CORRECT",temp_string);
+					p_tat_info->obs_info.FOV = FOV_CORRECT;
+				}
+				
+/*				
 				if(p_tat_info->obs_info.FOV == FOV_TBC)
 				{
 					if( abs(diff_ra) > 100 || abs(diff_dec) > 50)
@@ -714,6 +735,7 @@ to have time process following procedure */
 						diff_ra =diff_dec =0;
 					}
 				}
+*/
 				steplog(temp_string,STAR_TRACK_LOG_TYPE);
 				
 				
